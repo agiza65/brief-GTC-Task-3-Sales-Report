@@ -1,0 +1,37 @@
+{
+  "name": "Backfill sales report",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "backfill",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000001",
+      "name": "Backfill requested",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-260, 0],
+      "webhookId": "c2000000-0000-4000-8000-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\nconst { from, to } = body;\nif (!from || !to) throw new Error(\"Missing from/to dates\");\n\nconst filled = [], skipped = [], failed = [];\nconst existingReports = ((await (await fetch('http://mock-api:4100/report')).json().catch(() => ({}))).data || []);\nconst rates = ((await (await fetch('http://mock-api:4100/rates')).json().catch(() => ({}))).rates || { MYR: 1, USD: 4.42, SGD: 3.28 });\n\nlet cur = new Date(`${from}T00:00:00Z`);\nconst end = new Date(`${to}T00:00:00Z`);\n\nwhile (cur <= end) {\n  const dateStr = cur.toISOString().slice(0, 10);\n  cur.setUTCDate(cur.getUTCDate() + 1);\n\n  if (existingReports.some(r => String(r.date) === dateStr)) {\n    skipped.push({ date: dateStr, reason: \"report already exists\" });\n    continue;\n  }\n\n  const fromMs = Date.parse(`${dateStr}T00:00:00+08:00`);\n  const fromISO = new Date(fromMs).toISOString();\n  const toISO = new Date(fromMs + 86400000).toISOString();\n\n  let page = 1, totalPages = 1, dayOrders = [], fetchErr = null;\n  try {\n    do {\n      const res = await fetch(`http://mock-api:4100/orders?from=${fromISO}&to=${toISO}&page=${page}&per_page=100`);\n      if (!res.ok) {\n        const err = await res.json().catch(() => ({}));\n        fetchErr = err.error || `HTTP ${res.status}`;\n        break;\n      }\n      const data = await res.json();\n      dayOrders.push(...(data.data || []));\n      totalPages = data.total_pages || 1;\n      page++;\n    } while (page <= totalPages);\n  } catch (err) {\n    fetchErr = String(err);\n  }\n\n  if (fetchErr) {\n    failed.push({ date: dateStr, reason: fetchErr });\n    continue;\n  }\n\n  if (dayOrders.length === 0) {\n    skipped.push({ date: dateStr, reason: \"no orders on this day\" });\n    continue;\n  }\n\n  const totalMYR = Number(dayOrders.reduce((sum, o) => sum + o.amount * (rates[o.currency] || 1), 0).toFixed(2));\n  const newReport = { date: dateStr, order_count: dayOrders.length, total_myr: totalMYR };\n\n  const postRes = await fetch('http://mock-api:4100/report', {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify(newReport)\n  });\n\n  if (postRes.ok) {\n    filled.push(dateStr);\n    existingReports.push(newReport);\n  } else {\n    failed.push({ date: dateStr, reason: `HTTP ${postRes.status}` });\n  }\n}\n\nreturn [{ json: { filled, skipped, failed } }];"
+      },
+      "id": "b1000000-0000-4000-8000-000000000002",
+      "name": "Process Backfill Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0]
+    }
+  ],
+  "connections": {
+    "Backfill requested": {
+      "main": [[{ "node": "Process Backfill Range", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "active": true
+}

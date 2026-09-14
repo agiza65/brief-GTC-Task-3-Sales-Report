@@ -1,0 +1,83 @@
+{
+  "id": "DailySalesRpt01",
+  "name": "Daily sales report",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "daily-report",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Report was asked for",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-260, 0],
+      "webhookId": "b2000000-0000-4000-8000-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Work out which slice of time the report covers.\nconst date = $input.first().json.body.date;\n\nconst from = date + 'T00:00:00Z';\nconst to = new Date(Date.parse(from) + 24 * 60 * 60 * 1000).toISOString();\n\nreturn [{ json: { date, from, to } }];\n"
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Work out the day",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-40, 0]
+    },
+    {
+      "parameters": {
+        "url": "=http://mock-api:4100/orders?from={{ $json.from }}&to={{ $json.to }}&page=1&per_page=100",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Get the orders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [180, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Add the day up.\nconst page = $input.first().json;\nconst orders = page.data;\n\nlet total = 0;\nfor (const order of orders) {\n  total = total + order.amount;\n}\n\nreturn [{\n  json: {\n    date: $('Work out the day').first().json.date,\n    order_count: orders.length,\n    total_myr: Number(total.toFixed(2)),\n  },\n}];\n"
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Add the day up",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://mock-api:4100/report",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Send the report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [620, 0]
+    }
+  ],
+  "connections": {
+    "Report was asked for": {
+      "main": [[{ "node": "Work out the day", "type": "main", "index": 0 }]]
+    },
+    "Work out the day": {
+      "main": [[{ "node": "Get the orders", "type": "main", "index": 0 }]]
+    },
+    "Get the orders": {
+      "main": [[{ "node": "Add the day up", "type": "main", "index": 0 }]]
+    },
+    "Add the day up": {
+      "main": [[{ "node": "Send the report", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "active": false
+}
