@@ -1,0 +1,45 @@
+# A name of its own, so the two take-homes never stop each other.
+name: takehome-sales-report
+
+# Local bench for the daily sales report take-home.
+#   docker compose up
+#   n8n        -> http://localhost:5678
+#   orders API -> http://localhost:4100
+# From inside n8n, the API is http://mock-api:4100 (not localhost).
+
+services:
+  n8n:
+    # Pinned on purpose. A workflow export carries the node versions of the n8n
+    # that made it, so a candidate on one version and a reviewer on another can
+    # disagree about a workflow neither of them changed. Move this pin when you
+    # decide to, not when Docker decides for you, and mark the model answers
+    # again after you move it.
+    image: docker.n8n.io/n8nio/n8n:2.33.7
+    ports:
+      - '5678:5678'
+    environment:
+      - GENERIC_TIMEZONE=Asia/Kuala_Lumpur
+      - TZ=Asia/Kuala_Lumpur
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_SECURE_COOKIE=false
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./broken:/broken:ro # the workflow you are given
+      - ./submission:/submission # your fixed workflow lands here
+    depends_on:
+      - mock-api
+
+  mock-api:
+    image: node:22-alpine
+    working_dir: /app
+    command: node mock-api/server.js
+    ports:
+      - '4100:4100'
+    volumes:
+      - ./mock-api:/app/mock-api:ro
+      - ./fixtures:/app/fixtures:ro
+
+volumes:
+  n8n_data:
